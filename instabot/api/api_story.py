@@ -3,8 +3,10 @@ from __future__ import unicode_literals
 import json
 import os
 import shutil
+from uuid import uuid4
 import time
 from random import randint
+from PIL import Image
 
 from requests_toolbelt import MultipartEncoder
 
@@ -60,7 +62,46 @@ def upload_story_photo(self, photo, upload_id=None):
             "User-Agent": self.user_agent,
         }
     )
-    response = self.session.post(config.API_URL + "upload/photo/", data=m.to_string())
+
+    waterfall_id = str(uuid4())
+    # upload_name example: '1576102477530_0_7823256191'
+    rand = randint(1000000000, 9999999999) # noqa
+    upload_name = f"{upload_id}_0_{rand}"
+
+    rupload_params = {
+        "retry_context": '{"num_step_auto_retry":0,"num_reupload":0,"num_step_manual_retry":0}',
+        "media_type": "1",
+        "xsharing_user_ids": "[]",
+        "upload_id": upload_id,
+        "image_compression": json.dumps(
+            {"lib_name": "moz", "lib_version": "3.1.m", "quality": "80"}
+        ),
+    }
+
+    temp_img = Image.open(photo)
+    rgb_im = temp_img.convert('RGB')
+    fnam = f'{photo}.jpeg'
+    rgb_im.save(fnam)
+
+    photo = fnam
+
+    photo_data = open(photo, "rb").read()
+    photo_len = str(len(photo_data))
+
+    self.session.headers.update({
+        "Accept-Encoding": "gzip",
+        "X-Instagram-Rupload-Params": json.dumps(rupload_params),
+        "X_FB_PHOTO_WATERFALL_ID": waterfall_id,
+        "X-Entity-Type": "image/jpeg",
+        "Offset": "0",
+        "X-Entity-Name": upload_name,
+        "X-Entity-Length": photo_len,
+        "Content-Type": "application/octet-stream",
+        "Content-Length": photo_len,
+    })
+
+    response = self.session.post(f'https://i.instagram.com/rupload_igphoto/{upload_name}',
+                                 data=photo_data)
 
     if response.status_code == 200:
         upload_id = json.loads(response.text).get("upload_id")
